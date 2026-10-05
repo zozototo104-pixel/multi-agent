@@ -1,0 +1,86 @@
+name: Phase 2 Manual Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-phase-2:
+    name: Verify and run Phase 2 calculator agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PLANNER_ROLE: claude
+      CODER_ROLE: claude
+      MAX_CALLS_PER_RUN: "40"
+
+    steps:
+      - name: Checkout phase-2 branch
+        uses: actions/checkout@v6
+        with:
+          ref: phase-2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Show installed Phase 1 dependency versions
+        run: |
+          python -m pip freeze | grep -iE '^(litellm|python-dotenv|pytest)==' | tee phase-2-freeze.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Verify Docker
+        run: docker --version
+
+      - name: Verify OpenRouter secret
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo '::error::Secret OPENROUTER_API_KEY غير موجود في Actions Secrets.'
+            exit 1
+          fi
+          echo 'OPENROUTER_API_KEY is available.'
+
+      - name: Run live calculator agent
+        run: |
+          python run.py "اعمل CLI آلة حاسبة بـ Python تدعم + - * / مع اختبارات pytest"
+
+      - name: Print agent report preview
+        if: always()
+        run: |
+          found=0
+          for report in workspace/*/agent_report.json; do
+            if [ -f "$report" ]; then
+              found=1
+              echo "===== $report ====="
+              head -50 "$report"
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo 'No agent_report.json was produced.'
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-2-manual-results
+          path: |
+            phase-2-freeze.txt
+            workspace/*/agent_report.json
+            workspace/*/*.py
+            workspace/*/tests/**/*.py
+          if-no-files-found: warn
+          retention-days: 14
