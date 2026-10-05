@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [phase-2]
   workflow_dispatch:
-    inputs:
-      run_live_agent:
-        description: "تشغيل اختبار الوكيل الحقيقي باستخدام OpenRouter"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
