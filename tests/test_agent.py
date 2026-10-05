@@ -160,4 +160,4 @@ def test_sandbox_uses_network_none_and_user_for_docker(monkeypatch, tmp_path):
     assert calls[0][calls[0].index("--memory") + 1] == "1g"
     assert calls[1][calls[1].index("--network") + 1] == "none"
     assert "PYTHONDONTWRITEBYTECODE=1" in calls[1]
-    assert calls[1][-4:] == ["pytest", "-p", "no:cacheprovider", "-q"]
+    assert calls[1][-6:] == ["python", "-m", "pytest", "-p", "no:cacheprovider", "-q"]
