@@ -32,6 +32,11 @@ PROVIDERS = {
         api_base=os.getenv("HF_API_BASE", "https://router.huggingface.co/v1"),
         api_key_env="HF_TOKEN",
     ),
+    "freellmapi": ProviderConfig(
+        name="freellmapi",
+        api_base=os.getenv("FREELLMAPI_API_BASE", "http://127.0.0.1:3001/v1"),
+        api_key_env="FREELLMAPI_API_KEY",
+    ),
 }
 
 ROLES = {
@@ -39,6 +44,7 @@ ROLES = {
     "gpt": RoleConfig("openrouter", os.getenv("GPT_MODEL", "openai/gpt-5")),
     "gemini": RoleConfig("openrouter", os.getenv("GEMINI_MODEL", "google/gemini-2.5-pro")),
     "qwen": RoleConfig("hf", os.getenv("QWEN_MODEL", "Qwen/Qwen3-Coder-480B-A35B-Instruct")),
+    "router": RoleConfig("freellmapi", os.getenv("FREELLMAPI_MODEL", "auto")),
 }
 
 MAX_CALLS_PER_RUN = int(os.getenv("MAX_CALLS_PER_RUN", "30"))
