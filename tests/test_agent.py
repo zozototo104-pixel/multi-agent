@@ -94,6 +94,25 @@ def test_loop_stops_after_exactly_five_failures(monkeypatch, tmp_path):
     assert calls == {"run": 5, "fix": 4}
 
 
+def test_coder_repairs_valid_json_with_wrong_files_schema(monkeypatch):
+    replies = iter([
+        {"path": "calculator.py", "content": "broken shape"},
+        {"files": [{"path": "calculator.py", "content": "fixed shape"}]},
+    ])
+    calls = []
+
+    def fake_ask_json(ask_fn, role, prompt, system):
+        calls.append(prompt)
+        return next(replies)
+
+    monkeypatch.setattr(coder, "ask_json", fake_ask_json)
+    files = coder.write_code(sample_plan())
+
+    assert files == [FileContent("calculator.py", "fixed shape")]
+    assert len(calls) == 2
+    assert "لا يطابق البنية المطلوبة" in calls[1]
+
+
 def test_fix_code_receives_error_output(monkeypatch):
     captured = {}
 
