@@ -42,6 +42,22 @@ def test_successful_call(monkeypatch):
     }
 
 
+def test_freellmapi_router_uses_unified_openai_endpoint(monkeypatch):
+    captured = {}
+
+    def completion(**kwargs):
+        captured.update(kwargs)
+        return fake_response("ROUTED")
+
+    monkeypatch.setattr(models.litellm, "completion", completion)
+
+    assert models.ask("router", "hello") == "ROUTED"
+    assert captured["model"] == "openai/auto"
+    assert captured["api_base"] == config.PROVIDERS["freellmapi"].api_base
+    assert captured["api_key"] == "test-freellmapi-key"
+    assert captured["max_tokens"] == config.MODEL_MAX_TOKENS
+
+
 def test_missing_provider_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
