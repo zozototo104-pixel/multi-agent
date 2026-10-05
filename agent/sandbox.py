@@ -111,7 +111,7 @@ def run_in_sandbox(project_dir: Path, plan: Plan) -> RunResult:
         return install
 
     if test_parts[0] == "pytest":
-        test_parts = ["pytest", "-p", "no:cacheprovider", *test_parts[1:]]
+        test_parts = ["python", "-m", "pytest", "-p", "no:cacheprovider", *test_parts[1:]]
     else:
         test_parts = ["python", "-m", "pytest", "-p", "no:cacheprovider", *test_parts[3:]]
 
