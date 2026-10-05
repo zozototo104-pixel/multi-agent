@@ -1,81 +1,68 @@
 # Multi-Model Coding Agent
 
-المرحلة الأولى تؤسس طبقة موحدة لاستدعاء أربعة أدوار لنماذج ذكاء اصطناعي عبر LiteLLM، تمهيداً لإضافة المخطط وكاتب الكود والمراجع في المرحلة الثانية.
+وكيل برمجي متعدد النماذج. المرحلة الثانية تضيف MVP بنموذج واحد: يخطط مشروع Python، يكتب ملفاته، يشغّل الاختبارات داخل Docker معزول، ثم يصلح الأخطاء من مخرجات التشغيل الحقيقية حتى النجاح أو بلوغ خمس محاولات.
 
-## النماذج والمزودون
+## الإعداد
 
-- `claude` → OpenRouter → `anthropic/claude-sonnet-4.5`
-- `gpt` → OpenRouter → `openai/gpt-5`
-- `gemini` → OpenRouter → `google/gemini-2.5-pro`
-- `qwen` → Hugging Face Inference Providers → `Qwen/Qwen3-Coder-480B-A35B-Instruct`
+الأسرار تبقى في GitHub Codespaces Secrets فقط:
 
-كل أسماء النماذج وعناوين المزودين والحدود قابلة للتعديل من متغيرات البيئة. لا تضع المفاتيح في الملفات أو Git؛ استخدم Codespaces Secrets فقط.
+- `OPENROUTER_API_KEY`
+- `HF_TOKEN`
 
-## التشغيل في GitHub Codespaces
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pytest -q
-python test_keys.py
-```
-
-يقرأ المشروع المفتاحين التاليين من البيئة:
+إعدادات المرحلة الثانية الافتراضية:
 
 ```text
-OPENROUTER_API_KEY
-HF_TOKEN
+PLANNER_ROLE=claude
+CODER_ROLE=claude
+MAX_CALLS_PER_RUN=40
 ```
 
-يمكن نسخ `.env.example` إلى `.env` للتطوير المحلي فقط، لكن `.env` مستبعد من Git. في Codespaces Secrets لا تحتاج إلى إنشاء `.env` ما دامت المتغيرات ظاهرة داخل الـ terminal.
+يمكن تغيير الدورين إلى أي دور موجود في `config.ROLES` بدون تعديل بنية الوكيل.
 
-## الاستخدام
-
-```python
-from models import ask, usage_summary
-
-answer = ask("gpt", "اكتب دالة Python تجمع رقمين")
-print(answer)
-print(usage_summary())
-```
-
-الدالة `ask()` تفرض حداً افتراضياً قدره 30 استدعاءً لكل عملية تشغيل، ومهلة 60 ثانية، ومحاولتي إعادة إضافيتين للأخطاء المؤقتة مثل الشبكة و429 و5xx مع انتظار متزايد. كل طلب منطقي يحتسب استدعاءً واحداً حتى لو احتاج retry.
-
-كل استدعاء نهائي يسجل كسطر JSON في `logs/calls.jsonl` ويتضمن الوقت، الدور، المزود، النموذج، توكنز الإدخال والإخراج، المدة وحالة النجاح. مجلد `logs/` مستبعد من Git.
-
-## اختبار المفاتيح الحقيقي
+## التشغيل
 
 ```bash
-python test_keys.py
+pytest -q
+docker --version
+python run.py "اعمل CLI آلة حاسبة بـ Python تدعم + - * / مع اختبارات pytest"
+cat workspace/*/agent_report.json | head -50
 ```
 
-يرسل `Reply with exactly: OK` إلى الأدوار الأربعة. رمز الخروج `0` يعني نجاح 4/4، وأي فشل يجعل رمز الخروج `1`.
+كل مشروع مولّد يُكتب تحت `workspace/<project_name>/` فقط، والمجلد مستبعد من Git.
 
-## فحص عدم تسريب الأسرار
+## دورة العمل
+
+1. `planner.py` يحول الطلب إلى خطة JSON محققة الحقول.
+2. `coder.py` يولد ملفات المشروع بصيغة JSON.
+3. `workspace.py` يرفض المسارات المطلقة و`..` وأي خروج من مجلد المشروع، ويطبق حد 200KB للملف و50 ملفاً للمشروع.
+4. `sandbox.py` يثبت dependencies داخل `python:3.12-slim` مع الشبكة، ثم يشغل الاختبارات في حاوية جديدة بدون شبكة وبحدود 512MB RAM وCPU واحد و256 process.
+5. عند الفشل، `fix_code()` يستقبل الخطة والملفات وآخر 4000 حرف من stdout/stderr وexit code، ثم يعيد الملفات المعدلة فقط.
+6. `loop.py` يكرر التشغيل والإصلاح بحد أقصى خمس محاولات ويحفظ `agent_report.json`.
+
+لا يوجد fallback لتشغيل الكود المولد على الجهاز مباشرة إذا كان Docker غائباً.
+
+## أخطاء متوقعة
+
+| المشكلة | التصرف |
+|---|---|
+| Docker permission denied | تأكد أن Codespace يسمح بالوصول إلى Docker daemon ثم أعد تشغيل البيئة إذا لزم |
+| JSON غير صالح من النموذج | النظام يحاول استخراج JSON من النص/code fence ثم يطلب تصحيح JSON مرة واحدة فقط |
+| timeout | تثبيت الحزم يتوقف بعد 180 ثانية، والاختبار بعد 120 ثانية ويظهر ذلك في التقرير |
+| تجاوز حد الاستدعاءات | `models.ask()` يوقف الطلبات عند `MAX_CALLS_PER_RUN`؛ القيمة المقترحة للمرحلة الثانية 40 |
+| النموذج يحذف/يضعف الاختبارات | system prompt يمنع ذلك، ومرحلة لاحقة يمكن أن تضيف reviewer مستقل للتحقق البنيوي |
+
+## فحص الأسرار
 
 ```bash
 git grep -n "sk-\|hf_" || echo "✅ لا توجد أنماط مفاتيح معروفة في الملفات المتتبعة"
 ```
 
-ملاحظة: هذا فحص مساعد لأن المفاتيح قد تأتي بصيغ أخرى. القاعدة الأساسية هي عدم كتابة أي secret في ملفات المشروع أصلاً.
-
-## أخطاء شائعة
-
-| الخطأ | المعنى المعتاد | الحل |
-|---|---|---|
-| 401 | المفتاح مفقود/غير صالح | تحقق من Codespaces Secrets ثم أعد فتح terminal جديد |
-| 402 | لا يوجد رصيد كافٍ | اشحن رصيد المزود أو استخدم حساباً/نموذجاً متاحاً بشكل مشروع |
-| 404 | اسم النموذج أو المسار غير صحيح/غير متاح | راجع اسم النموذج في لوحة المزود وعدّل متغير البيئة الخاص به |
-| 429 | تجاوز معدل الطلبات | الكود يعيد المحاولة مرتين؛ خفّض التوازي أو انتظر حدود المزود |
-| timeout | المزود لم يرد خلال 60 ثانية | الكود يعيد المحاولة للأخطاء المؤقتة؛ افحص الشبكة وحالة المزود قبل زيادة المهلة |
-
-## قبل الدفع
+## أوامر التسليم
 
 ```bash
 pytest -q
-python test_keys.py
-git grep -n "sk-\|hf_" || true
-git status
-git diff --check
+docker --version
+python run.py "اعمل CLI آلة حاسبة بـ Python تدعم + - * / مع اختبارات pytest"
+cat workspace/*/agent_report.json | head -50
+git add . && git commit -m "Phase 2: single-model plan-code-run-fix loop" && git push -u origin phase-2
 ```
