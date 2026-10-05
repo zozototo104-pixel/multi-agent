@@ -34,6 +34,18 @@ def test_workspace_rejects_path_traversal(tmp_path, bad_path):
         workspace.safe_path(tmp_path, bad_path)
 
 
+def test_read_project_files_ignores_python_cache_and_binary_pyc(tmp_path):
+    (tmp_path / "app.py").write_text("print('ok')", encoding="utf-8")
+    (tmp_path / "module.pyc").write_bytes(b"\x00\xff\xfe\x80")
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "cached.pyc").write_bytes(b"\x00\xff\xfe")
+
+    files = workspace.read_project_files(tmp_path)
+
+    assert [(item.path, item.content) for item in files] == [("app.py", "print('ok')")]
+
+
 def test_loop_stops_on_first_success(monkeypatch, tmp_path):
     plan = sample_plan()
     calls = {"run": 0, "fix": 0}
@@ -104,9 +116,34 @@ def test_clear_error_when_docker_missing(monkeypatch):
         sandbox.run_in_sandbox(Path("/tmp/project"), sample_plan())
 
 
-def test_sandbox_uses_network_none_for_tests(monkeypatch, tmp_path):
+def test_rejects_unsafe_dependency(monkeypatch, tmp_path):
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/docker")
+    plan = sample_plan()
+    plan.dependencies.append("--index-url=http://x")
+    with pytest.raises(ValueError, match="dependency غير آمن"):
+        sandbox.run_in_sandbox(tmp_path, plan)
+
+
+def test_rejects_unsafe_test_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/docker")
+    plan = Plan(
+        project_name="calculator",
+        language="python",
+        description="آلة حاسبة",
+        files=sample_plan().files,
+        dependencies=[],
+        test_command="rm -rf /",
+        run_command="",
+    )
+    with pytest.raises(ValueError, match="test_command يجب أن يبدأ"):
+        sandbox.run_in_sandbox(tmp_path, plan)
+
+
+def test_sandbox_uses_network_none_and_user_for_docker(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(sandbox.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(sandbox.os, "getgid", lambda: 1000)
 
     def fake_run(args, capture_output, text, timeout, check):
         calls.append(args)
@@ -116,5 +153,11 @@ def test_sandbox_uses_network_none_for_tests(monkeypatch, tmp_path):
     result = sandbox.run_in_sandbox(tmp_path, sample_plan())
     assert result.exit_code == 0
     assert len(calls) == 2
+    for command in calls:
+        assert command[command.index("--user") + 1] == "1000:1000"
+        assert command[command.index("-e") + 1] == "HOME=/tmp"
     assert "--network" not in calls[0]
+    assert calls[0][calls[0].index("--memory") + 1] == "1g"
     assert calls[1][calls[1].index("--network") + 1] == "none"
+    assert "PYTHONDONTWRITEBYTECODE=1" in calls[1]
+    assert calls[1][-4:] == ["pytest", "-p", "no:cacheprovider", "-q"]
