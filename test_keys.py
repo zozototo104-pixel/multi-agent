@@ -1,11 +1,41 @@
-from models import ask, MODELS
+"""اختبار اتصال حقيقي اختياري للمزودين الأربعة."""
 
-ok = 0
-for key, name in MODELS.items():
-    try:
-        r = ask(key, "Reply with exactly: OK")
-        ok += "OK" in r
-        print(f"✅ {key} ({name}): {r.strip()[:40]}")
-    except Exception as e:
-        print(f"❌ {key} ({name}): {str(e)[:200]}")
-print(f"\nالنتيجة: {ok}/{len(MODELS)}")
+import sys
+
+import config
+from models import ask, usage_summary
+
+
+def main() -> int:
+    passed = 0
+    for role in ("claude", "gpt", "gemini", "qwen"):
+        role_config = config.ROLES[role]
+        provider = config.PROVIDERS[role_config.provider]
+        try:
+            result = ask(role, "Reply with exactly: OK")
+            if result.strip() == "OK":
+                passed += 1
+                print(f"✅ {role}: {provider.name} / {role_config.model} — OK")
+            else:
+                preview = result.replace("\n", " ")[:200]
+                print(
+                    f"❌ {role}: {provider.name} / {role_config.model} — "
+                    f"رد غير متوقع: {preview}"
+                )
+        except Exception as exc:
+            preview = str(exc).replace("\n", " ")[:200]
+            print(f"❌ {role}: {provider.name} / {role_config.model} — {preview}")
+
+    summary = usage_summary()
+    print(f"\nالنتيجة: {passed}/4")
+    print(
+        "ملخص التوكنز: "
+        f"input={summary['input_tokens']}, "
+        f"output={summary['output_tokens']}, "
+        f"total={summary['total_tokens']}"
+    )
+    return 0 if passed == 4 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
