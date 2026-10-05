@@ -16,6 +16,7 @@ def reset_state(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "MODEL_MAX_RETRIES", 2)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     monkeypatch.setenv("HF_TOKEN", "test-hf-key")
+    monkeypatch.setenv("FREELLMAPI_API_KEY", "test-freellmapi-key")
 
 
 def fake_response(text="OK", prompt_tokens=5, completion_tokens=1):
