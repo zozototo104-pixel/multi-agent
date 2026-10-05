@@ -1,0 +1,175 @@
+name: Phase 2 Verification
+
+on:
+  push:
+    branches: [phase-2]
+  pull_request:
+    branches: [phase-2]
+  workflow_dispatch:
+    inputs:
+      run_live_agent:
+        description: "تشغيل اختبار الوكيل الحقيقي باستخدام OpenRouter"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Offline tests and Docker sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Record installed versions
+        run: |
+          python -m pip freeze | grep -iE '^(litellm|python-dotenv|pytest)==' | tee phase-2-freeze.txt
+
+      - name: Run all pytest tests
+        run: pytest -q
+
+      - name: Verify Docker
+        run: docker --version
+
+      - name: Run real Docker sandbox smoke test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from agent.sandbox import run_in_sandbox
+          from agent.schemas import FileSpec, Plan
+
+          project = Path("workspace/workflow_smoke")
+          project.mkdir(parents=True, exist_ok=True)
+          (project / "test_smoke.py").write_text(
+              "def test_sandbox():\n    assert 2 + 2 == 4\n",
+              encoding="utf-8",
+          )
+
+          plan = Plan(
+              project_name="workflow_smoke",
+              language="python",
+              description="GitHub Actions Docker sandbox smoke test",
+              files=[FileSpec("test_smoke.py", "Smoke test")],
+              dependencies=[],
+              test_command="pytest -q",
+              run_command="",
+          )
+          result = run_in_sandbox(project, plan)
+          print(result.stdout)
+          if result.stderr:
+              print(result.stderr)
+          if result.timed_out or result.exit_code != 0:
+              raise SystemExit(
+                  f"Docker sandbox smoke failed: exit={result.exit_code}, timed_out={result.timed_out}"
+              )
+          PY
+
+      - name: Check tracked files for common secret prefixes
+        run: |
+          if git grep -n -E 'sk-|hf_' -- ':!*.md'; then
+            echo '::error::وجد نمط يشبه مفتاح API في ملف متتبع.'
+            exit 1
+          fi
+          echo 'No common API key prefixes found in tracked non-Markdown files.'
+
+      - name: Upload installed package versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-2-freeze
+          path: phase-2-freeze.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  live-agent:
+    name: Live calculator agent
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_agent }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PLANNER_ROLE: claude
+      CODER_ROLE: claude
+      MAX_CALLS_PER_RUN: "40"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify required secret names are available
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo '::error::Secret OPENROUTER_API_KEY غير موجود في Actions Secrets.'
+            exit 1
+          fi
+          if [ -z "$HF_TOKEN" ]; then
+            echo '::warning::Secret HF_TOKEN غير موجود. Claude عبر OpenRouter لا يحتاجه في هذا الاختبار، لكنه مطلوب لدور qwen لاحقاً.'
+          fi
+          echo 'Required OpenRouter secret is available.'
+
+      - name: Verify Docker
+        run: docker --version
+
+      - name: Run live calculator build
+        run: |
+          python run.py "اعمل CLI آلة حاسبة بـ Python تدعم + - * / مع اختبارات pytest"
+
+      - name: Print report preview
+        if: always()
+        run: |
+          found=0
+          for report in workspace/*/agent_report.json; do
+            if [ -f "$report" ]; then
+              found=1
+              echo "===== $report ====="
+              head -50 "$report"
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo 'No agent_report.json was produced.'
+          fi
+
+      - name: Upload agent report and generated project
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-2-live-agent-output
+          path: |
+            workspace/*/agent_report.json
+            workspace/*/*.py
+            workspace/*/tests/**/*.py
+          if-no-files-found: warn
+          retention-days: 14
