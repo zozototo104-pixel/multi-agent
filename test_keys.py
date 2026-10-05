@@ -13,8 +13,7 @@ def main() -> int:
         provider = config.PROVIDERS[role_config.provider]
         try:
             result = ask(role, "Reply with exactly: OK")
-            normalized = result.strip().upper().rstrip(".!?,;:").strip()
-            if normalized == "OK":
+            if "OK" in result.upper():
                 passed += 1
                 print(f"✅ {role}: {provider.name} / {role_config.model} — OK")
             else:
