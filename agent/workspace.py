@@ -9,6 +9,7 @@ from .schemas import FileContent
 WORKSPACE_ROOT = Path("workspace")
 MAX_FILE_BYTES = 200 * 1024
 MAX_FILES = 50
+_IGNORED_DIRS = {".agent_deps", "__pycache__", ".pytest_cache"}
 
 
 def project_directory(project_name: str) -> Path:
@@ -33,23 +34,40 @@ def safe_path(project_dir: Path, relative_path: str) -> Path:
     return target
 
 
+def _is_ignored(relative: Path | PurePosixPath) -> bool:
+    """ملفات التشغيل المؤقتة لا تدخل في سياق الوكيل ولا في حد الملفات."""
+    return (
+        any(part in _IGNORED_DIRS for part in relative.parts)
+        or relative.suffix == ".pyc"
+    )
+
+
 def write_files(project_name: str, files: list[FileContent]) -> Path:
-    if len(files) > MAX_FILES:
+    filtered_files = [
+        item
+        for item in files
+        if not _is_ignored(PurePosixPath(item.path))
+    ]
+    if len(filtered_files) > MAX_FILES:
         raise ValueError(f"الحد الأقصى هو {MAX_FILES} ملفاً لكل مشروع.")
 
     project_dir = project_directory(project_name)
     project_dir.mkdir(parents=True, exist_ok=True)
 
     existing = [
-        path for path in project_dir.rglob("*")
-        if path.is_file() and ".agent_deps" not in path.relative_to(project_dir).parts
+        path
+        for path in project_dir.rglob("*")
+        if path.is_file()
+        and not _is_ignored(path.relative_to(project_dir))
     ]
-    existing_relative = {str(path.relative_to(project_dir)) for path in existing}
-    incoming = {item.path for item in files}
+    existing_relative = {
+        str(path.relative_to(project_dir)) for path in existing
+    }
+    incoming = {item.path for item in filtered_files}
     if len(existing_relative | incoming) > MAX_FILES:
         raise ValueError(f"الحد الأقصى هو {MAX_FILES} ملفاً لكل مشروع.")
 
-    for item in files:
+    for item in filtered_files:
         encoded = item.content.encode("utf-8")
         if len(encoded) > MAX_FILE_BYTES:
             raise ValueError(f"الملف {item.path} يتجاوز حد 200KB.")
@@ -67,8 +85,14 @@ def read_project_files(project_dir: Path) -> list[FileContent]:
         if (
             not path.is_file()
             or path.name == "agent_report.json"
-            or ".agent_deps" in relative.parts
+            or _is_ignored(relative)
         ):
             continue
-        files.append(FileContent(path=str(relative), content=path.read_text(encoding="utf-8")))
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "\x00" in content:
+            continue
+        files.append(FileContent(path=str(relative), content=content))
     return files
