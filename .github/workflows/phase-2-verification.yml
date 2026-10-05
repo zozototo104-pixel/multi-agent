@@ -97,7 +97,7 @@ jobs:
 
   live-agent:
     name: Live calculator agent
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_agent }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
