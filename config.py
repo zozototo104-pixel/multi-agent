@@ -43,5 +43,6 @@ ROLES = {
 
 MAX_CALLS_PER_RUN = int(os.getenv("MAX_CALLS_PER_RUN", "30"))
 MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "60"))
+MODEL_MAX_TOKENS = int(os.getenv("MODEL_MAX_TOKENS", "2000"))
 MODEL_MAX_RETRIES = int(os.getenv("MODEL_MAX_RETRIES", "2"))
 CALL_LOG_PATH = os.getenv("CALL_LOG_PATH", "logs/calls.jsonl")
