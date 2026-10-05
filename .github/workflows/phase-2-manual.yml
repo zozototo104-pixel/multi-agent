@@ -45,13 +45,13 @@ jobs:
       - name: Verify Docker
         run: docker --version
 
-      - name: Verify OpenRouter secret
+      - name: Verify Hugging Face secret
         run: |
-          if [ -z "$OPENROUTER_API_KEY" ]; then
-            echo '::error::Secret OPENROUTER_API_KEY غير موجود في Actions Secrets.'
+          if [ -z "$HF_TOKEN" ]; then
+            echo '::error::Secret HF_TOKEN غير موجود في Actions Secrets.'
             exit 1
           fi
-          echo 'OPENROUTER_API_KEY is available.'
+          echo 'HF_TOKEN is available.'
 
       - name: Run live calculator agent
         run: |
