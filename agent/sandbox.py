@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -13,6 +15,9 @@ from .schemas import Plan, RunResult
 IMAGE = "python:3.12-slim"
 INSTALL_TIMEOUT = 180
 TEST_TIMEOUT = 120
+_DEPENDENCY_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._\-\[\]]*([<>=!~]=?[A-Za-z0-9.*]+)?$"
+)
 
 
 def _ensure_docker() -> None:
@@ -49,25 +54,49 @@ def _run(args: list[str], timeout: int) -> RunResult:
         )
 
 
-def _safe_command(command: str, label: str) -> list[str]:
+def _safe_test_command(command: str) -> list[str]:
     try:
         parts = shlex.split(command)
     except ValueError as exc:
-        raise ValueError(f"{label} غير صالح: {exc}") from exc
+        raise ValueError(f"test_command غير صالح: {exc}") from exc
     if not parts:
-        raise ValueError(f"{label} لا يمكن أن يكون فارغاً.")
-    return parts
+        raise ValueError("test_command لا يمكن أن يكون فارغاً.")
+    if parts[0] == "pytest":
+        return parts
+    if len(parts) >= 3 and parts[:3] == ["python", "-m", "pytest"]:
+        return parts
+    raise ValueError("test_command يجب أن يبدأ بـ pytest أو python -m pytest.")
+
+
+def _safe_dependencies(dependencies: list[str]) -> list[str]:
+    validated: list[str] = []
+    for dependency in dependencies:
+        if dependency == "pytest":
+            continue
+        if dependency.startswith("-") or not _DEPENDENCY_RE.fullmatch(dependency):
+            raise ValueError(f"dependency غير آمن ومرفوض: {dependency}")
+        validated.append(dependency)
+    return validated
+
+
+def _user_args() -> list[str]:
+    return ["--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp"]
 
 
 def run_in_sandbox(project_dir: Path, plan: Plan) -> RunResult:
     _ensure_docker()
     project = str(project_dir.resolve())
-
-    dependencies = [item for item in plan.dependencies if item and item != "pytest"]
+    dependencies = _safe_dependencies(plan.dependencies)
+    test_parts = _safe_test_command(plan.test_command)
     install_packages = ["pytest", *dependencies]
+
     install = _run(
         [
             "docker", "run", "--rm",
+            *_user_args(),
+            "--memory", "1g",
+            "--cpus", "1",
+            "--pids-limit", "256",
             "-v", f"{project}:/app",
             "-w", "/app",
             IMAGE,
@@ -81,15 +110,21 @@ def run_in_sandbox(project_dir: Path, plan: Plan) -> RunResult:
     if install.exit_code != 0:
         return install
 
-    test_parts = _safe_command(plan.test_command, "test_command")
+    if test_parts[0] == "pytest":
+        test_parts = ["pytest", "-p", "no:cacheprovider", *test_parts[1:]]
+    else:
+        test_parts = ["python", "-m", "pytest", "-p", "no:cacheprovider", *test_parts[3:]]
+
     return _run(
         [
             "docker", "run", "--rm",
+            *_user_args(),
             "--network", "none",
             "--memory", "512m",
             "--cpus", "1",
             "--pids-limit", "256",
             "-e", "PYTHONPATH=/app/.agent_deps:/app",
+            "-e", "PYTHONDONTWRITEBYTECODE=1",
             "-v", f"{project}:/app",
             "-w", "/app",
             IMAGE,
