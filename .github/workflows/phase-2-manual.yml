@@ -14,8 +14,8 @@ jobs:
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      PLANNER_ROLE: claude
-      CODER_ROLE: claude
+      PLANNER_ROLE: qwen
+      CODER_ROLE: qwen
       MAX_CALLS_PER_RUN: "40"
 
     steps:
