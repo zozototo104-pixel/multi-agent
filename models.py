@@ -123,6 +123,7 @@ def ask(role: str, prompt: str, system: str = "") -> str:
                 api_base=provider.api_base,
                 api_key=api_key,
                 timeout=config.MODEL_TIMEOUT_SECONDS,
+                max_tokens=config.MODEL_MAX_TOKENS,
                 num_retries=0,
             )
             input_tokens, output_tokens = _usage_tokens(response)
