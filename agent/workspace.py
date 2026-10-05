@@ -40,7 +40,10 @@ def write_files(project_name: str, files: list[FileContent]) -> Path:
     project_dir = project_directory(project_name)
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    existing = [path for path in project_dir.rglob("*") if path.is_file()]
+    existing = [
+        path for path in project_dir.rglob("*")
+        if path.is_file() and ".agent_deps" not in path.relative_to(project_dir).parts
+    ]
     existing_relative = {str(path.relative_to(project_dir)) for path in existing}
     incoming = {item.path for item in files}
     if len(existing_relative | incoming) > MAX_FILES:
