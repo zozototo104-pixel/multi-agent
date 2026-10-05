@@ -63,7 +63,12 @@ def write_files(project_name: str, files: list[FileContent]) -> Path:
 def read_project_files(project_dir: Path) -> list[FileContent]:
     files: list[FileContent] = []
     for path in sorted(project_dir.rglob("*")):
-        if not path.is_file() or path.name == "agent_report.json":
+        relative = path.relative_to(project_dir)
+        if (
+            not path.is_file()
+            or path.name == "agent_report.json"
+            or ".agent_deps" in relative.parts
+        ):
             continue
-        files.append(FileContent(path=str(path.relative_to(project_dir)), content=path.read_text(encoding="utf-8")))
+        files.append(FileContent(path=str(relative), content=path.read_text(encoding="utf-8")))
     return files
