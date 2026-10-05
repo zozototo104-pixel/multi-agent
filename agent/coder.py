@@ -47,7 +47,13 @@ def _ask_files(prompt: str) -> list[FileContent]:
         try:
             return _parse_files(repaired)
         except ValueError as second_error:
-            raise ValueError("الكاتب أعاد بنية files غير صالحة مرتين.") from second_error
+            if isinstance(repaired, dict):
+                shape = f"dict keys={sorted(str(key) for key in repaired.keys())}"
+            else:
+                shape = type(repaired).__name__
+            raise ValueError(
+                f"الكاتب أعاد بنية files غير صالحة مرتين ({shape})."
+            ) from second_error
 
 
 def write_code(plan: Plan) -> list[FileContent]:
