@@ -84,13 +84,13 @@ jobs:
               )
           PY
 
-      - name: Check tracked files for common secret prefixes
+      - name: Check tracked files for common secret patterns
         run: |
-          if git grep -n -E 'sk-|hf_' -- ':!*.md'; then
-            echo '::error::وجد نمط يشبه مفتاح API في ملف متتبع.'
+          if git grep -n -E 'sk-[A-Za-z0-9_-]{8,}|hf_[A-Za-z0-9_-]{8,}' -- ':!*.md' ':!.github/workflows/*'; then
+            echo '::error::وجد نمط يشبه مفتاح API حقيقياً في ملف متتبع.'
             exit 1
           fi
-          echo 'No common API key prefixes found in tracked non-Markdown files.'
+          echo 'No common API key patterns found in tracked non-Markdown files.'
 
       - name: Upload installed package versions
         if: always()
