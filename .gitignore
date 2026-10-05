@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 *.log
 logs/
+workspace/
 .pytest_cache/
