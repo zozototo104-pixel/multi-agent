@@ -29,12 +29,33 @@ def _parse_files(data: object) -> list[FileContent]:
     return files
 
 
+def _ask_files(prompt: str) -> list[FileContent]:
+    """اطلب ملفات JSON، وأصلح مخالفة الـ schema مرة واحدة فقط."""
+    data = ask_json(ask, CODER_ROLE, prompt, _SYSTEM)
+    try:
+        return _parse_files(data)
+    except ValueError:
+        repair_prompt = (
+            "الرد السابق كان JSON صالحاً لكنه لا يطابق البنية المطلوبة. "
+            "أعد الإجابة كاملة مرة واحدة فقط بهذا الشكل حرفياً: "
+            '{"files":[{"path":"relative/path.py","content":"..."}]}. '
+            "لا تضف أي مفاتيح خارجية أخرى ولا Markdown ولا شرح.\n\n"
+            f"الطلب الأصلي:\n{prompt}\n\n"
+            f"الرد السابق:\n{json.dumps(data, ensure_ascii=False)}"
+        )
+        repaired = ask_json(ask, CODER_ROLE, repair_prompt, _SYSTEM)
+        try:
+            return _parse_files(repaired)
+        except ValueError as second_error:
+            raise ValueError("الكاتب أعاد بنية files غير صالحة مرتين.") from second_error
+
+
 def write_code(plan: Plan) -> list[FileContent]:
     prompt = (
         "اكتب جميع ملفات هذه الخطة. يجب أن ترجع كل الملفات المذكورة في الخطة.\n"
         + json.dumps(plan.to_dict(), ensure_ascii=False)
     )
-    return _parse_files(ask_json(ask, CODER_ROLE, prompt, _SYSTEM))
+    return _ask_files(prompt)
 
 
 def fix_code(
